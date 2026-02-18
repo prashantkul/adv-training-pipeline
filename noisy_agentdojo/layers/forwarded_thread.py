@@ -1,4 +1,10 @@
-"""Forwarded email thread noise layer."""
+"""Forwarded email thread noise layer.
+
+Design: The injection appears AS a message within a realistic forwarded email
+thread. Surrounding filler messages and forwarding headers act as camouflage,
+making the injection blend into normal email context. The injection itself
+remains fully readable.
+"""
 
 from __future__ import annotations
 
@@ -64,15 +70,20 @@ _DATES = [
     "Fri, Oct 18, 2024 at 8:21 AM",
 ]
 
-_DEPTH_BY_INTENSITY = {
-    Intensity.LIGHT: (1, 2),
-    Intensity.MEDIUM: (2, 3),
-    Intensity.HEAVY: (3, 5),
+# How many filler messages before/after the injection
+_FILLER_COUNTS = {
+    Intensity.LIGHT: (1, 1),   # 1 before, 1 after
+    Intensity.MEDIUM: (1, 2),  # 1-2 before, 1-2 after
+    Intensity.HEAVY: (2, 3),   # 2-3 before, 2-3 after
 }
 
 
 class ForwardedThreadLayer(NoiseLayer):
-    """Wraps content in nested forwarded email threads."""
+    """Embeds injection as a message within a forwarded email thread.
+
+    The injection text appears as one of the emails in the thread,
+    surrounded by realistic filler messages and forwarding headers.
+    """
 
     @property
     def name(self) -> str:
@@ -80,7 +91,6 @@ class ForwardedThreadLayer(NoiseLayer):
 
     def applicable_to(self, scenario: ExtractedScenario) -> bool:
         ctx = scenario.environment_context
-        # Applicable to workspace/travel scenarios with inbox
         return "inbox" in ctx or scenario.suite_name in ("workspace", "travel")
 
     def apply(
@@ -97,47 +107,58 @@ class ForwardedThreadLayer(NoiseLayer):
         sig_template = env.get_template("email_signature.jinja2")
         fwd_template = env.get_template("email_forward.jinja2")
 
-        min_depth, max_depth = _DEPTH_BY_INTENSITY[intensity]
-        depth = rng.randint(min_depth, max_depth)
+        injection_text = self._get_injection_text(scenario)
+        context_text = existing_noisy_text or self._extract_email_content(scenario)
 
-        content = existing_noisy_text or self._extract_email_content(scenario)
+        min_filler, max_filler = _FILLER_COUNTS[intensity]
+        num_before = rng.randint(min_filler, max_filler)
+        num_after = rng.randint(min_filler, max_filler)
 
         forwards = []
-        used_names = set()
-        for i in range(depth):
-            name, email = self._pick_unique(rng, _NAMES, used_names)
-            used_names.add(name)
-            to_name, to_email = self._pick_unique(rng, _NAMES, used_names)
+        used_names: set[str] = set()
 
-            sig_style = rng.choice(_SIGNATURE_STYLES)
-            signature = sig_template.render(
-                style=sig_style,
-                name=name,
-                title=rng.choice(_TITLES),
-                company=rng.choice(_COMPANIES),
-                email=email,
-                phone=rng.choice(_PHONES),
-            )
+        # Filler messages BEFORE injection
+        for _ in range(num_before):
+            forwards.append(self._make_filler_message(rng, sig_template, used_names))
 
-            body = rng.choice(_FILLER_BODIES) if i < depth - 1 else content
-            cc = rng.choice(_NAMES)[1] if rng.random() < 0.3 else None
+        # The injection message — appears as a natural email in the thread
+        inj_name, inj_email = self._pick_unique(rng, _NAMES, used_names)
+        used_names.add(inj_name)
+        to_name, to_email = self._pick_unique(rng, _NAMES, used_names)
 
-            forwards.append({
-                "from_name": name,
-                "from_email": email,
-                "date": rng.choice(_DATES),
-                "subject": rng.choice(_SUBJECTS),
-                "to_email": to_email,
-                "cc": cc,
-                "body": body,
-                "signature": signature.strip(),
-            })
+        # Combine context with injection so it reads naturally
+        if context_text and injection_text:
+            inj_body = context_text + "\n\n" + injection_text
+        elif injection_text:
+            inj_body = injection_text
+        else:
+            inj_body = context_text
+
+        forwards.append({
+            "from_name": inj_name,
+            "from_email": inj_email,
+            "date": rng.choice(_DATES),
+            "subject": rng.choice(_SUBJECTS),
+            "to_email": to_email,
+            "cc": None,
+            "body": inj_body,
+            "signature": "",
+        })
+
+        # Filler messages AFTER injection
+        for _ in range(num_after):
+            forwards.append(self._make_filler_message(rng, sig_template, used_names))
 
         noisy_text = fwd_template.render(forwards=forwards)
+        depth = num_before + 1 + num_after
         return noisy_text, {"depth": depth, "intensity": intensity.value}
 
+    def _get_injection_text(self, scenario: ExtractedScenario) -> str:
+        if not scenario.injection_vectors:
+            return ""
+        return "\n".join(scenario.injection_vectors.values())
+
     def _extract_email_content(self, scenario: ExtractedScenario) -> str:
-        """Pull representative content from the environment context."""
         ctx = scenario.environment_context
         inbox = ctx.get("inbox", {})
         emails = inbox.get("emails", {})
@@ -146,6 +167,37 @@ class ForwardedThreadLayer(NoiseLayer):
             if isinstance(first_email, dict):
                 return first_email.get("body", scenario.user_task_prompt)
         return scenario.user_task_prompt
+
+    def _make_filler_message(
+        self,
+        rng: random.Random,
+        sig_template: jinja2.Template,
+        used_names: set[str],
+    ) -> dict[str, Any]:
+        name, email = self._pick_unique(rng, _NAMES, used_names)
+        used_names.add(name)
+        to_name, to_email = self._pick_unique(rng, _NAMES, used_names)
+
+        sig_style = rng.choice(_SIGNATURE_STYLES)
+        signature = sig_template.render(
+            style=sig_style,
+            name=name,
+            title=rng.choice(_TITLES),
+            company=rng.choice(_COMPANIES),
+            email=email,
+            phone=rng.choice(_PHONES),
+        ).strip()
+
+        return {
+            "from_name": name,
+            "from_email": email,
+            "date": rng.choice(_DATES),
+            "subject": rng.choice(_SUBJECTS),
+            "to_email": to_email,
+            "cc": rng.choice(_NAMES)[1] if rng.random() < 0.3 else None,
+            "body": rng.choice(_FILLER_BODIES),
+            "signature": signature,
+        }
 
     @staticmethod
     def _pick_unique(

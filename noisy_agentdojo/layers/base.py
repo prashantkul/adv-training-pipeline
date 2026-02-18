@@ -55,11 +55,17 @@ class NoiseLayer(abc.ABC):
         rng: Any,
         previous: NoisyScenario | None = None,
     ) -> NoisyScenario:
-        """Apply this layer and return a NoisyScenario."""
-        existing_text = previous.noisy_text if previous else None
+        """Apply this layer and return a NoisyScenario.
+
+        The noise_layers_text captures the raw layer output. The final
+        noisy_text combines structured environment data with layer output
+        so the LLM has both the data it needs to reason AND the realistic
+        noise that camouflages the injection.
+        """
+        existing_layer_text = previous.noise_layers_text if previous else None
         prior_layers = list(previous.noise_layers_applied) if previous else []
 
-        noisy_text, params = self.apply(scenario, intensity, rng, existing_text)
+        layer_text, params = self.apply(scenario, intensity, rng, existing_layer_text)
 
         record = NoiseLayerRecord(
             layer_name=self.name,
@@ -71,5 +77,5 @@ class NoiseLayer(abc.ABC):
             scenario=scenario,
             noisy_environment=scenario.environment_context,
             noise_layers_applied=prior_layers + [record],
-            noisy_text=noisy_text,
+            noise_layers_text=layer_text,
         )

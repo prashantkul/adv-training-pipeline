@@ -27,12 +27,12 @@ class TestForwardedThreadLayer:
         assert "Forwarded message" in text
         assert "depth" in params
 
-    def test_depth_varies_with_intensity(self, sample_workspace_scenario):
+    def test_injection_readable_in_thread(self, sample_workspace_scenario, deterministic_rng):
+        """Injection text must appear verbatim and readable in the output."""
         layer = ForwardedThreadLayer()
-        for intensity in Intensity:
-            rng = random.Random(42)
-            _, params = layer.apply(sample_workspace_scenario, intensity, rng)
-            assert "depth" in params
+        text, _ = layer.apply(sample_workspace_scenario, Intensity.HEAVY, deterministic_rng)
+        assert "INFORMATION" in text
+        assert "mark.black-2134@gmail.com" in text
 
     def test_deterministic(self, sample_workspace_scenario):
         layer = ForwardedThreadLayer()
@@ -53,29 +53,28 @@ class TestVoicemailSTTLayer:
     def test_apply_produces_voicemail_framing(self, sample_workspace_scenario, deterministic_rng):
         layer = VoicemailSTTLayer()
         text, params = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
-        # Should have voicemail framing
         assert any(marker in text for marker in ["Voicemail", "transcript", "Transcription", "transcription"])
 
-    def test_preserves_injection_text(self, sample_workspace_scenario, deterministic_rng):
+    def test_injection_preserved_verbatim(self, sample_workspace_scenario, deterministic_rng):
+        """Injection text must be fully intact — not degraded."""
         layer = VoicemailSTTLayer()
-        # The injection text should be preserved
         injection = list(sample_workspace_scenario.injection_vectors.values())[0]
         text, _ = layer.apply(sample_workspace_scenario, Intensity.HEAVY, deterministic_rng)
-        # The injection payload should appear verbatim in the output
-        assert injection in text or "INFORMATION" in text
+        assert injection in text
 
-    def test_degrades_non_injection_text(self, sample_benign_scenario, deterministic_rng):
+    def test_context_is_degraded(self, sample_workspace_scenario, deterministic_rng):
+        """Non-injection context should show STT degradation artifacts."""
         layer = VoicemailSTTLayer()
-        text, _ = layer.apply(sample_benign_scenario, Intensity.HEAVY, deterministic_rng)
-        # At heavy intensity, should see filler words or [inaudible]
+        text, _ = layer.apply(sample_workspace_scenario, Intensity.HEAVY, deterministic_rng)
+        # At heavy intensity, degradation artifacts are very likely
         has_degradation = (
             "[inaudible]" in text
-            or "um" in text.lower()
-            or "uh" in text.lower()
-            or "like" in text.lower()
+            or "um " in text.lower()
+            or "uh " in text.lower()
+            or "like " in text.lower()
+            or "you know" in text.lower()
         )
-        # Not guaranteed at every seed, but highly likely at heavy
-        assert len(text) > 0
+        assert has_degradation
 
 
 class TestHTMLEmailLayer:
@@ -91,19 +90,22 @@ class TestHTMLEmailLayer:
         text, params = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
         assert "<html>" in text.lower() or "<!doctype" in text.lower()
         assert "template" in params
-        assert "hiding_methods" in params
 
-    def test_hiding_methods_scale_with_intensity(self, sample_workspace_scenario):
+    def test_injection_in_visible_content(self, sample_workspace_scenario, deterministic_rng):
+        """Injection should appear in visible body, NOT in hidden elements."""
+        layer = HTMLEmailLayer()
+        text, _ = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
+        assert "INFORMATION" in text
+        assert "mark.black-2134@gmail.com" in text
+        # Should NOT use hiding techniques
+        assert 'display:none' not in text
+        assert 'color:#ffffff;font-size:0px' not in text
+
+    def test_clutter_scales_with_intensity(self, sample_workspace_scenario):
         layer = HTMLEmailLayer()
         _, light_params = layer.apply(sample_workspace_scenario, Intensity.LIGHT, random.Random(42))
         _, heavy_params = layer.apply(sample_workspace_scenario, Intensity.HEAVY, random.Random(42))
-        assert len(light_params["hiding_methods"]) <= len(heavy_params["hiding_methods"])
-
-    def test_injection_in_hidden_element(self, sample_workspace_scenario, deterministic_rng):
-        layer = HTMLEmailLayer()
-        text, _ = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
-        # The injection text should appear somewhere in the HTML
-        assert "INFORMATION" in text
+        assert light_params["clutter_paragraphs"] <= heavy_params["clutter_paragraphs"]
 
 
 class TestCalendarContactLayer:
@@ -120,13 +122,15 @@ class TestCalendarContactLayer:
         assert "BEGIN:VCALENDAR" in text
         assert "BEGIN:VEVENT" in text
 
-    def test_apply_produces_vcards(self, sample_workspace_scenario, deterministic_rng):
-        layer = CalendarContactLayer()
-        text, params = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
-        assert "BEGIN:VCARD" in text
-
-    def test_injection_in_ics_field(self, sample_workspace_scenario, deterministic_rng):
+    def test_injection_in_description_field(self, sample_workspace_scenario, deterministic_rng):
+        """Injection should appear in a readable DESCRIPTION field."""
         layer = CalendarContactLayer()
         text, _ = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
-        # Injection text should appear in ICS data
         assert "INFORMATION" in text
+        assert "mark.black-2134@gmail.com" in text
+
+    def test_has_filler_events(self, sample_workspace_scenario, deterministic_rng):
+        """Should have multiple events (filler + injection)."""
+        layer = CalendarContactLayer()
+        text, _ = layer.apply(sample_workspace_scenario, Intensity.MEDIUM, deterministic_rng)
+        assert text.count("BEGIN:VEVENT") >= 2

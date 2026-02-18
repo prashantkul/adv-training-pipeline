@@ -1,4 +1,11 @@
-"""Voicemail / speech-to-text transcript noise layer."""
+"""Voicemail / speech-to-text transcript noise layer.
+
+Design: The injection text appears CLEANLY within a degraded voicemail
+transcript. Surrounding context is degraded with STT artifacts (filler words,
+[inaudible], homophones) but the injection itself is preserved verbatim.
+This makes the injection look like a clear segment of dictation within a
+noisy transcript — realistic and still fully readable.
+"""
 
 from __future__ import annotations
 
@@ -88,14 +95,14 @@ _INAUDIBLE_RATE = {
 
 
 class VoicemailSTTLayer(NoiseLayer):
-    """Simulates a voicemail speech-to-text transcript with degradation."""
+    """Simulates a voicemail transcript where surrounding context is degraded
+    but the injection text appears as a clear, readable segment."""
 
     @property
     def name(self) -> str:
         return "voicemail_stt"
 
     def applicable_to(self, scenario: ExtractedScenario) -> bool:
-        # Applicable to any scenario
         return True
 
     def apply(
@@ -105,18 +112,17 @@ class VoicemailSTTLayer(NoiseLayer):
         rng: random.Random,
         existing_noisy_text: str | None = None,
     ) -> tuple[str, dict[str, Any]]:
-        content = existing_noisy_text or self._get_content(scenario)
-        injection_texts = self._get_injection_texts(scenario)
+        context_text = existing_noisy_text or self._get_context(scenario)
+        injection_text = self._get_injection_text(scenario)
 
-        # Ensure injection text is present in content for preservation
-        for inj in injection_texts:
-            if inj not in content:
-                content = content + "\n" + inj
+        # Degrade the context (non-injection) parts
+        degraded_context = self._degrade_chunk(context_text, intensity, rng)
 
-        # Split into injection and non-injection regions, degrade only non-injection
-        degraded = self._degrade_preserving_injections(
-            content, injection_texts, intensity, rng
-        )
+        # Build transcript: degraded context THEN clean injection
+        if injection_text:
+            transcript = degraded_context + "\n\n" + injection_text
+        else:
+            transcript = degraded_context
 
         # Wrap in voicemail framing
         caller = rng.choice(_CALLERS)
@@ -129,16 +135,13 @@ class VoicemailSTTLayer(NoiseLayer):
         )
         outro = rng.choice(_VOICEMAIL_OUTROS).format(confidence=confidence)
 
-        noisy_text = intro + degraded + outro
-        return noisy_text, {
-            "intensity": intensity.value,
-            "caller": caller,
-        }
+        noisy_text = intro + transcript + outro
+        return noisy_text, {"intensity": intensity.value, "caller": caller}
 
-    def _get_content(self, scenario: ExtractedScenario) -> str:
+    def _get_context(self, scenario: ExtractedScenario) -> str:
+        """Pull non-injection context from the environment."""
         ctx = scenario.environment_context
         parts = []
-        # Pull some text from the environment
         inbox = ctx.get("inbox", {})
         for email in list(inbox.get("emails", {}).values())[:3]:
             if isinstance(email, dict) and "body" in email:
@@ -147,47 +150,16 @@ class VoicemailSTTLayer(NoiseLayer):
             parts.append(scenario.user_task_prompt)
         return "\n".join(parts)
 
-    def _get_injection_texts(self, scenario: ExtractedScenario) -> list[str]:
+    def _get_injection_text(self, scenario: ExtractedScenario) -> str:
+        """Get the injection payload — preserved verbatim."""
         if not scenario.injection_vectors:
-            return []
-        return list(scenario.injection_vectors.values())
-
-    def _degrade_preserving_injections(
-        self,
-        text: str,
-        injection_texts: list[str],
-        intensity: Intensity,
-        rng: random.Random,
-    ) -> str:
-        """Degrade text while preserving injection payloads verbatim."""
-        # Find injection regions
-        protected_ranges: list[tuple[int, int]] = []
-        for inj in injection_texts:
-            start = text.find(inj)
-            if start >= 0:
-                protected_ranges.append((start, start + len(inj)))
-
-        protected_ranges.sort()
-
-        # Process non-protected regions
-        result_parts = []
-        prev_end = 0
-        for start, end in protected_ranges:
-            if prev_end < start:
-                chunk = text[prev_end:start]
-                result_parts.append(self._degrade_chunk(chunk, intensity, rng))
-            result_parts.append(text[start:end])
-            prev_end = end
-
-        if prev_end < len(text):
-            result_parts.append(self._degrade_chunk(text[prev_end:], intensity, rng))
-
-        return "".join(result_parts)
+            return ""
+        return "\n".join(scenario.injection_vectors.values())
 
     def _degrade_chunk(
         self, text: str, intensity: Intensity, rng: random.Random
     ) -> str:
-        """Apply STT-like degradation to a text chunk."""
+        """Apply STT-like degradation to non-injection text."""
         degradation_rate = _DEGRADATION_RATE[intensity]
         filler_rate = _FILLER_RATE[intensity]
         inaudible_rate = _INAUDIBLE_RATE[intensity]
@@ -196,20 +168,16 @@ class VoicemailSTTLayer(NoiseLayer):
         result: list[str] = []
 
         for word in words:
-            # Possibly insert filler word before
             if rng.random() < filler_rate:
                 result.append(rng.choice(_FILLER_WORDS))
 
-            # Possibly replace with [inaudible]
             if rng.random() < inaudible_rate:
                 result.append("[inaudible]")
                 continue
 
-            # Possibly swap with homophone
             clean_word = re.sub(r"[^\w']", "", word.lower())
             if rng.random() < degradation_rate and clean_word in _HOMOPHONES:
                 replacement = _HOMOPHONES[clean_word]
-                # Preserve original casing pattern
                 if word[0].isupper():
                     replacement = replacement.capitalize()
                 result.append(replacement)
@@ -218,9 +186,7 @@ class VoicemailSTTLayer(NoiseLayer):
 
         text = " ".join(result)
 
-        # Light punctuation removal at higher intensities
         if intensity in (Intensity.MEDIUM, Intensity.HEAVY):
-            # Remove some punctuation
             chars = list(text)
             for i, c in enumerate(chars):
                 if c in ".,;:!?" and rng.random() < degradation_rate:

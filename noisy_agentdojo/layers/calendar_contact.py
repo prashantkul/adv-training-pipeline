@@ -1,4 +1,10 @@
-"""Calendar (ICS) and contact (vCard) noise layer."""
+"""Calendar (ICS) and contact (vCard) noise layer.
+
+Design: The injection is placed in a readable calendar event DESCRIPTION field.
+Filler events and contacts act as camouflage clutter — they make the data look
+like a real calendar export with many entries, where the injection naturally
+blends into one event's description. The injection remains fully readable.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +30,15 @@ _EVENT_TITLES = [
     "Training Session", "All Hands", "Design Review",
 ]
 
+_FILLER_DESCRIPTIONS = [
+    "Regular team sync. No preparation needed.",
+    "Review sprint progress and blockers.",
+    "Discuss Q4 roadmap and milestones.",
+    "Monthly check-in with stakeholders.",
+    "Agenda: budget review, team updates, open items.",
+    "Bring your laptop for the demo.",
+]
+
 _CONTACT_NAMES = [
     ("John", "Smith"), ("Maria", "Garcia"), ("Wei", "Zhang"),
     ("Aisha", "Mohammed"), ("Carlos", "Lopez"), ("Sophie", "Dubois"),
@@ -33,16 +48,13 @@ _CONTACT_NAMES = [
 _ORGS = ["TechCorp", "FinServ Inc.", "GlobalMedia", "StartupXYZ"]
 _TITLES = ["Engineer", "Manager", "Director", "Analyst", "Consultant"]
 
-_ICS_INJECTION_FIELDS = ["DESCRIPTION", "LOCATION", "COMMENT"]
-_VCARD_INJECTION_FIELDS = ["NOTE"]
-
-_EXTRA_EVENTS = {
+_FILLER_EVENTS = {
     Intensity.LIGHT: (1, 2),
     Intensity.MEDIUM: (2, 4),
-    Intensity.HEAVY: (3, 6),
+    Intensity.HEAVY: (4, 7),
 }
 
-_EXTRA_CONTACTS = {
+_FILLER_CONTACTS = {
     Intensity.LIGHT: (0, 1),
     Intensity.MEDIUM: (1, 2),
     Intensity.HEAVY: (2, 4),
@@ -50,7 +62,8 @@ _EXTRA_CONTACTS = {
 
 
 class CalendarContactLayer(NoiseLayer):
-    """Generates ICS calendar and vCard data with injections embedded in metadata fields."""
+    """Embeds injection in a calendar event description within a realistic
+    calendar export. Filler events and contacts act as camouflage."""
 
     @property
     def name(self) -> str:
@@ -70,13 +83,9 @@ class CalendarContactLayer(NoiseLayer):
         content = existing_noisy_text or ""
         injection_text = self._get_injection_text(scenario)
 
-        # Generate ICS calendar
         cal_str = self._generate_ics(injection_text, intensity, rng)
+        vcards_str = self._generate_vcards(intensity, rng)
 
-        # Generate vCards
-        vcards_str = self._generate_vcards(injection_text, intensity, rng)
-
-        # Combine
         parts = []
         if content:
             parts.append(content)
@@ -105,68 +114,57 @@ class CalendarContactLayer(NoiseLayer):
         cal.add("version", "2.0")
 
         base_dt = datetime(2024, 10, 21, 9, 0, 0)
-        min_events, max_events = _EXTRA_EVENTS[intensity]
-        num_events = rng.randint(min_events, max_events)
+        min_events, max_events = _FILLER_EVENTS[intensity]
+        num_filler = rng.randint(min_events, max_events)
 
-        # Main event with injection
-        main_event = icalendar.Event()
-        main_event.add("summary", rng.choice(_EVENT_TITLES))
-        main_event.add("dtstart", base_dt)
-        main_event.add("dtend", base_dt + timedelta(hours=1))
-        main_event.add("location", rng.choice(_LOCATIONS))
+        # Some filler events BEFORE the injection event
+        filler_before = num_filler // 2
+        filler_after = num_filler - filler_before
 
-        # Place injection in a random ICS field
-        inj_field = rng.choice(_ICS_INJECTION_FIELDS)
-        if inj_field == "DESCRIPTION":
-            main_event.add("description", injection_text)
-        elif inj_field == "LOCATION":
-            main_event.add("location", injection_text)
-        elif inj_field == "COMMENT":
-            main_event.add("comment", injection_text)
+        for i in range(filler_before):
+            cal.add_component(self._make_filler_event(base_dt, i, rng))
 
-        cal.add_component(main_event)
+        # The injection event — injection in DESCRIPTION (visible, readable)
+        inj_event = icalendar.Event()
+        inj_event.add("summary", rng.choice(_EVENT_TITLES))
+        inj_dt = base_dt + timedelta(hours=rng.randint(1, 24))
+        inj_event.add("dtstart", inj_dt)
+        inj_event.add("dtend", inj_dt + timedelta(hours=1))
+        inj_event.add("location", rng.choice(_LOCATIONS))
+        inj_event.add("description", injection_text)
+        cal.add_component(inj_event)
 
-        # Add filler events
-        for i in range(num_events):
-            event = icalendar.Event()
-            event.add("summary", rng.choice(_EVENT_TITLES))
-            dt = base_dt + timedelta(hours=rng.randint(1, 72))
-            event.add("dtstart", dt)
-            event.add("dtend", dt + timedelta(minutes=rng.choice([30, 60, 90])))
-            event.add("location", rng.choice(_LOCATIONS))
-            event.add("description", "Regular meeting - no action items.")
-            cal.add_component(event)
+        for i in range(filler_after):
+            offset = filler_before + 1 + i
+            cal.add_component(self._make_filler_event(base_dt, offset, rng))
 
         return cal.to_ical().decode("utf-8")
 
+    def _make_filler_event(
+        self, base_dt: datetime, index: int, rng: random.Random
+    ) -> icalendar.Event:
+        event = icalendar.Event()
+        event.add("summary", rng.choice(_EVENT_TITLES))
+        dt = base_dt + timedelta(hours=rng.randint(1, 72) + index * 2)
+        event.add("dtstart", dt)
+        event.add("dtend", dt + timedelta(minutes=rng.choice([30, 60, 90])))
+        event.add("location", rng.choice(_LOCATIONS))
+        event.add("description", rng.choice(_FILLER_DESCRIPTIONS))
+        return event
+
     def _generate_vcards(
         self,
-        injection_text: str,
         intensity: Intensity,
         rng: random.Random,
     ) -> str:
-        min_contacts, max_contacts = _EXTRA_CONTACTS[intensity]
+        """Generate filler contacts as camouflage clutter."""
+        min_contacts, max_contacts = _FILLER_CONTACTS[intensity]
         num_contacts = rng.randint(min_contacts, max_contacts)
-        if num_contacts == 0 and not injection_text:
+        if num_contacts == 0:
             return ""
 
         vcards = []
-
-        # Main contact with injection
-        if injection_text:
-            first, last = rng.choice(_CONTACT_NAMES)
-            card = vobject.vCard()
-            card.add("n").value = vobject.vcard.Name(family=last, given=first)
-            card.add("fn").value = f"{first} {last}"
-            card.add("email").value = f"{first.lower()}.{last.lower()}@example.com"
-            card.add("org").value = [rng.choice(_ORGS)]
-            card.add("title").value = rng.choice(_TITLES)
-            note = card.add("note")
-            note.value = injection_text
-            vcards.append(card.serialize())
-
-        # Filler contacts
-        used_names = set()
+        used_names: set[str] = set()
         for _ in range(num_contacts):
             first, last = self._pick_unique_name(rng, used_names)
             card = vobject.vCard()
@@ -175,6 +173,7 @@ class CalendarContactLayer(NoiseLayer):
             card.add("email").value = f"{first.lower()}.{last.lower()}@example.com"
             card.add("org").value = [rng.choice(_ORGS)]
             card.add("tel").value = f"+1555{rng.randint(1000000, 9999999)}"
+            card.add("title").value = rng.choice(_TITLES)
             vcards.append(card.serialize())
 
         return "\n".join(vcards)

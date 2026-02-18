@@ -49,6 +49,15 @@ def _get_tool_names(suite: TaskSuite) -> list[str]:
     return [t.name for t in suite.tools]
 
 
+def _get_tool_descriptions(suite: TaskSuite) -> dict[str, str]:
+    """Extract tool name -> full docstring mapping from suite."""
+    descriptions = {}
+    for t in suite.tools:
+        doc = getattr(t, "full_docstring", None) or getattr(t, "description", "")
+        descriptions[t.name] = doc
+    return descriptions
+
+
 def get_environment_context(
     suite: TaskSuite, injections: dict[str, str]
 ) -> dict[str, Any]:
@@ -97,6 +106,7 @@ def extract_scenario(
         injection_vectors=injections,
         environment_context=env_context,
         available_tools=_get_tool_names(suite),
+        tool_descriptions=_get_tool_descriptions(suite),
         ground_truth_calls=user_gt,
         injection_tool_calls=inj_gt,
         is_benign=False,
@@ -160,6 +170,7 @@ def extract_benign_scenarios(
                     user_task_prompt=user_task.PROMPT,
                     environment_context=env_context,
                     available_tools=_get_tool_names(suite),
+                    tool_descriptions=_get_tool_descriptions(suite),
                     ground_truth_calls=gt,
                     is_benign=True,
                 )

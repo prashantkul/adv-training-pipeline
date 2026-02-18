@@ -102,7 +102,7 @@ class NoisePipeline:
                 scenario=scenario,
                 noisy_environment=scenario.environment_context,
                 noise_layers_applied=[],
-                noisy_text=scenario.user_task_prompt,
+                noise_layers_text="",
             )
 
         selected_layers = self._sample_layers(applicable)

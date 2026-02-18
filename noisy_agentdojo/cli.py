@@ -90,6 +90,7 @@ def generate(
                     user_prompt=s.user_task_prompt,
                     noisy_context=ns.noisy_text,
                     available_tools=s.available_tools,
+                    tool_descriptions=s.tool_descriptions,
                     ground_truth_calls=s.ground_truth_calls,
                     injection_tool_calls=s.injection_tool_calls,
                     noise_layers=ns.noise_layers_applied,
@@ -140,6 +141,7 @@ def generate_benign(
                 user_prompt=s.user_task_prompt,
                 noisy_context=ns.noisy_text,
                 available_tools=s.available_tools,
+                tool_descriptions=s.tool_descriptions,
                 ground_truth_calls=s.ground_truth_calls,
                 noise_layers=ns.noise_layers_applied,
                 is_benign=True,
@@ -217,7 +219,7 @@ def compare(
             scenario=s,
             noisy_environment=s.environment_context,
             noise_layers_applied=[],
-            noisy_text=json.dumps(s.environment_context, indent=2),
+            noise_layers_text="",
         )
         result = validator.validate(clean_noisy)
         clean_results.append(result)

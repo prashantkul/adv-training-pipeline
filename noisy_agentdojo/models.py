@@ -5,7 +5,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+import json
+
+from pydantic import BaseModel, Field, computed_field
 
 
 class Intensity(str, Enum):
@@ -33,6 +35,7 @@ class ExtractedScenario(BaseModel):
     injection_vectors: dict[str, str] | None = None
     environment_context: dict[str, Any]
     available_tools: list[str]
+    tool_descriptions: dict[str, str] = Field(default_factory=dict)
     ground_truth_calls: list[ToolCall]
     injection_tool_calls: list[ToolCall] | None = None
     is_benign: bool = False
@@ -47,12 +50,30 @@ class NoiseLayerRecord(BaseModel):
 
 
 class NoisyScenario(BaseModel):
-    """A scenario with noise layers applied."""
+    """A scenario with noise layers applied.
+
+    The `noise_layers_text` is the raw output from noise layers (camouflage).
+    The `noisy_text` property combines the structured environment data with the
+    layer output, giving the LLM both the data it needs AND realistic noise.
+    """
 
     scenario: ExtractedScenario
     noisy_environment: dict[str, Any]
     noise_layers_applied: list[NoiseLayerRecord]
-    noisy_text: str  # The final noisy text that wraps the environment
+    noise_layers_text: str  # Raw output from noise layers
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def noisy_text(self) -> str:
+        """Environment context + noise layer output combined."""
+        env_json = json.dumps(self.noisy_environment, indent=2)
+        if not self.noise_layers_text:
+            return env_json
+        return (
+            f"{env_json}\n\n"
+            f"--- Additional Context ---\n\n"
+            f"{self.noise_layers_text}"
+        )
 
 
 class ValidationResult(BaseModel):
@@ -74,6 +95,7 @@ class ValidatedExample(BaseModel):
     user_prompt: str
     noisy_context: str
     available_tools: list[str]
+    tool_descriptions: dict[str, str] = Field(default_factory=dict)
     ground_truth_calls: list[ToolCall]
     injection_tool_calls: list[ToolCall] | None = None
     noise_layers: list[NoiseLayerRecord]
