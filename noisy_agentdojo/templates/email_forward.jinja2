@@ -1,0 +1,13 @@
+{% for fwd in forwards %}
+---------- Forwarded message ---------
+From: {{ fwd.from_name }} <{{ fwd.from_email }}>
+Date: {{ fwd.date }}
+Subject: {{ fwd.subject }}
+To: {{ fwd.to_email }}
+{% if fwd.cc %}Cc: {{ fwd.cc }}{% endif %}
+
+{{ fwd.body }}
+{% if fwd.signature %}
+{{ fwd.signature }}
+{% endif %}
+{% endfor %}

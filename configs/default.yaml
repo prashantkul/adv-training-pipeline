@@ -1,0 +1,31 @@
+# Noise pipeline configuration
+min_layers: 1
+max_layers: 3
+
+intensity_weights:
+  light: 0.3
+  medium: 0.5
+  heavy: 0.2
+
+layer_weights:
+  forwarded_thread: 1.0
+  voicemail_stt: 1.0
+  html_email: 0.8
+  calendar_contact: 0.8
+  mixed_language: 0.6
+  imessage_thread: 0.6
+
+seed: 42
+
+suites:
+  - workspace
+  - travel
+  - banking
+  - slack
+
+attacks:
+  - important_instructions
+
+model_name: "gpt-4o-2024-05-13"
+gemini_model: "gemini-2.0-flash"
+version: "v1.2.2"

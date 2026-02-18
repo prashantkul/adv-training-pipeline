@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>{{ subject }}</title></head>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr><td style="background-color: #{{ header_color }}; padding: 20px; text-align: center;">
+<h1 style="color: white; margin: 0;">{{ newsletter_name }}</h1>
+</td></tr>
+<tr><td style="padding: 20px;">
+<h2>{{ headline }}</h2>
+<p>{{ intro_text }}</p>
+{{ visible_content }}
+{{ hidden_injection }}
+<hr style="border: 1px solid #eee;">
+<p style="font-size: 12px; color: #999;">
+You received this email because you're subscribed to {{ newsletter_name }}.
+<a href="#">Unsubscribe</a> | <a href="#">View in browser</a>
+</p>
+</td></tr>
+</table>
+</body>
+</html>

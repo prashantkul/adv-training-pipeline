@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>{{ subject }}</title></head>
+<body style="font-family: 'Segoe UI', sans-serif; padding: 20px;">
+<div style="border-bottom: 2px solid #{{ brand_color }}; padding-bottom: 10px; margin-bottom: 20px;">
+<strong>{{ sender_name }}</strong> | {{ department }}
+</div>
+<p>{{ greeting }},</p>
+{{ body_content }}
+{{ hidden_injection }}
+<div style="margin-top: 30px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 11px; color: #666;">
+<p>{{ sender_name }}<br>{{ sender_title }}<br>{{ company }}</p>
+<p>This message may contain confidential information and is intended only for the individual named.</p>
+</div>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{% if style == "corporate" %}
+--
+{{ name }}
+{{ title }} | {{ company }}
+{{ email }} | {{ phone }}
+This email and any attachments are confidential and intended solely for the addressee.
+{% elif style == "casual" %}
+- {{ name }}
+{% elif style == "legal" %}
+--
+{{ name }}
+{{ title }}, {{ company }}
+{{ email }}
+
+CONFIDENTIALITY NOTICE: This e-mail message, including any attachments, is for the sole use of the intended recipient(s) and may contain confidential and privileged information. Any unauthorized review, use, disclosure, or distribution is prohibited. If you are not the intended recipient, please contact the sender by reply e-mail and destroy all copies of the original message.
+{% elif style == "minimal" %}
+
+{{ name }}
+{% endif %}
