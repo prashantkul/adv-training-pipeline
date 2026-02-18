@@ -15,6 +15,7 @@ dependencies = [
     "tenacity>=8.2",
     "rich>=13.0",
     "google-genai>=1.0",
+    "python-dotenv>=1.2.1",
 ]
 
 [project.scripts]
